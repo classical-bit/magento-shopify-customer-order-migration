@@ -1,7 +1,7 @@
 const { parse } = require("csv-parse/sync");
 const { stringify } = require("csv-stringify");
 const fs = require("fs");
-const { uniq, isEmpty, includes } = require("lodash");
+const { uniq, includes, intersection } = require("lodash");
 const XRegExp = require('xregexp');
 
 const customerFile = "export_customer_20240301_062141";
@@ -19,6 +19,20 @@ const config = {
 
 function main() {
     const customers = readCSV(customerFile);
+    const orders = readCSV(orderFile);
+    const orderItems = readCSV(orderItemFile);
+    const orderAddresses = readCSV(orderAddressFile);
+    const orderPayments = readCSV(orderPaymentFile);
+    const orderStatusHistory = readCSV(orderStatusHistoryFile);
+    const shipmentTracks = readCSV(shipmentTrackFile);
+
+    const customeremails = uniq(orders.map(o => o.customer_email));
+    console.log("order file emails count:", customeremails.length);
+
+    const allcustomeremails = uniq(customers.map(c => c.email));
+    console.log("customer file emails count:", allcustomeremails.length);
+
+    const customeremailintersection = intersection(customeremails, allcustomeremails);
 
     const filteredCustomers = [];
     const chineseNamesCustomers = [];
@@ -57,33 +71,37 @@ function main() {
         [...chineseNamesCustomers, ...urlNamesCustomers]
     );
 
-    const onlyTheseEmails = uniq(filteredCustomers.map(customer => customer.email));
-    console.log("processing customer count", onlyTheseEmails.length);
+    const pCustomers = filteredCustomers;
+    console.log("customers to process:", customeremailintersection.length);
 
-    const processedCustomers = processCustomers(filteredCustomers, onlyTheseEmails);
+    const processedCustomers = processCustomers(pCustomers, customeremailintersection);
     console.log("processesed customer count:", processedCustomers.length);
 
-    const processedCustomerAddresses = processCustomerAddresses(readCSV(customerAddressFile), onlyTheseEmails, { save_to_csv: true });
+    const processedCustomerAddresses = processCustomerAddresses(readCSV(customerAddressFile), customeremailintersection, { save_to_csv: true });
     console.log("processesed customer address count:", processedCustomerAddresses.length);
-    const processedOrders = processOrders(readCSV(orderFile), onlyTheseEmails, { save_to_csv: true });
+
+    const processedOrders = processOrders(orders, customeremailintersection, { save_to_csv: true });
     console.log("processesed order count:", processedOrders.length);
     const onlyTheseOrderIds = processedOrders.map(o => o.entity_id);
-    const processedOrderItems = processOrderItems(readCSV(orderItemFile), onlyTheseOrderIds, { save_to_csv: true });
+
+    const processedOrderItems = processOrderItems(orderItems, onlyTheseOrderIds, { save_to_csv: true });
     console.log("processesed order item count:", processedOrderItems.length);
-    const processedOrderAddresses = processOrderAddresses(readCSV(orderAddressFile), onlyTheseOrderIds, { save_to_csv: true });
+
+    const processedOrderAddresses = processOrderAddresses(orderAddresses, onlyTheseOrderIds, { save_to_csv: true });
     console.log("processesed order address count:", processedOrderAddresses.length);
-    const processedOrderPayments = processOrderPayment(readCSV(orderPaymentFile), onlyTheseOrderIds, { save_to_csv: true });
+
+    const processedOrderPayments = processOrderPayment(orderPayments, onlyTheseOrderIds, { save_to_csv: true });
     console.log("processesed order payment count:", processedOrderPayments.length);
-    const processedOrderStatusHistory = processOrderStatusHistory(readCSV(orderStatusHistoryFile), onlyTheseOrderIds, { save_to_csv: true });
+
+    const processedOrderStatusHistory = processOrderStatusHistory(orderStatusHistory, onlyTheseOrderIds, { save_to_csv: true });
     console.log("processesed order status history count:", processedOrderStatusHistory.length);
-    const processedShipmentTracks = processShipmentTrack(readCSV(shipmentTrackFile), onlyTheseOrderIds, { save_to_csv: true });
+
+    const processedShipmentTracks = processShipmentTrack(shipmentTracks, onlyTheseOrderIds, { save_to_csv: true });
     console.log("processesed shipment track count:", processedShipmentTracks.length);
 }
 
 function findChineseNames(text) {
-    // Chinese character pattern
     const chinesePattern = XRegExp('\\p{Han}+', 'g');
-    // Match Chinese names
     const chineseNames = XRegExp.match(text, chinesePattern);
     return chineseNames;
 }
@@ -128,16 +146,15 @@ function processOrderPayment(orderPayments, onlyTheseOrderIds, input) {
 }
 
 function processOrderAddresses(orderAddresses, onlyTheseOrderIds, input) {
+    const rows = orderAddresses.filter(oa => onlyTheseOrderIds.includes(oa.parent_id));
     if (input?.save_to_csv) {
-        const rows = orderAddresses.filter(oa => onlyTheseOrderIds.includes(oa.parent_id));
         writeCSV(
             "order/order_address",
             Object.keys(orderAddresses[0]),
             rows
         );
-        return rows;
     }
-    return orderAddresses;
+    return rows;
 }
 
 function processOrderItems(orderItems, onlyTheseOrderIds, input) {
@@ -154,16 +171,15 @@ function processOrderItems(orderItems, onlyTheseOrderIds, input) {
 }
 
 function processOrders(orders, onlyTheseEmails, input) {
+    const rows = orders.filter(order => onlyTheseEmails.includes(order.customer_email));
     if (input?.save_to_csv) {
-        const rows = orders.filter(order => onlyTheseEmails.includes(order.customer_email));
         writeCSV(
             "order/order",
             Object.keys(orders[0]),
             rows
         );
-        return rows;
     }
-    return orders;
+    return rows;
 }
 
 
